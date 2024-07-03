@@ -1,0 +1,38 @@
+HELP.md
+target/
+.mvn
+mvnw.cmd
+src/test/resources
+src/main/resources
+**/src/main/**/target/
+**/src/test/**/target/
+**/mvnw
+
+### STS ###
+.apt_generated
+.classpath
+.factorypathпше
+.project
+.settings
+.springBeans
+.sts4-cache
+.mvnw.cmd
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
