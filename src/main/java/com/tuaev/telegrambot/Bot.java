@@ -17,6 +17,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardRem
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
+
 import java.io.*;
 import java.io.File;
 import java.net.*;
@@ -48,7 +49,7 @@ public class Bot extends TelegramLongPollingBot {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public Bot(){
+    public Bot() {
 
     }
 
@@ -81,7 +82,7 @@ public class Bot extends TelegramLongPollingBot {
 
         if (message.hasText() && message.getText().equals("/profile")) {
             Boolean check = jdbcTemplate.queryForObject("SELECT EXISTS(SELECT user_profiles.user_profiles_id FROM user_profiles WHERE user_profiles_id = ?);", Boolean.class, String.valueOf(user.getId()));
-            if (Boolean.TRUE.equals(check)){
+            if (Boolean.TRUE.equals(check)) {
                 UserProfiles userProfiles = jdbcTemplate.queryForObject("SELECT * FROM user_profiles WHERE user_profiles_id = ?", new UserProfilesRowMapper(), String.valueOf(user.getId()));
                 profilesByIdUser.put(user.getId(), userProfiles);
                 try {
@@ -107,7 +108,7 @@ public class Bot extends TelegramLongPollingBot {
                 } catch (TelegramApiException e) {
                     throw new RuntimeException(e);
                 }
-            }else {
+            } else {
                 try {
                     execute(SendMessage.builder()
                             .chatId(String.valueOf(user.getId()))
@@ -153,7 +154,7 @@ public class Bot extends TelegramLongPollingBot {
                 jdbcTemplate.update("DELETE FROM user_profiles WHERE user_profiles_id = ?", String.valueOf(user.getId()));
                 try {
                     UserProfiles userProfiles = jdbcTemplate.queryForObject("SELECT * FROM user_profiles WHERE user_profiles_id = ?", new UserProfilesRowMapper(), String.valueOf(user.getId()));
-                }catch (EmptyResultDataAccessException ignored){
+                } catch (EmptyResultDataAccessException ignored) {
                     profilesByIdUser.put(user.getId(), null);
                     execute(SendMessage.builder()
                             .chatId(String.valueOf(user.getId()))
@@ -272,6 +273,29 @@ public class Bot extends TelegramLongPollingBot {
                 }
                 try {
                     if (iteratorUser.get(user.getId()) <= questions.size() - 1) {
+                        if (message.hasText() && iteratorUser.get(user.getId()) == 3 && !message.getText().equals("Парни") && !message.getText().equals("Девушки")) {
+                            execute(SendMessage.builder()
+                                    .chatId(String.valueOf(user.getId()))
+                                    .text("Нет такого варианта ответа")
+                                    .replyMarkup(ReplyKeyboardMarkup.builder()
+                                            .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("Парни"), new KeyboardButton("Девушки"))))
+                                            .resizeKeyboard(true)
+                                            .build())
+                                    .build());
+                            i--;
+                            iteratorUser.replace(user.getId(), i);
+                        } else if (!message.hasText()) {
+                            execute(SendMessage.builder()
+                                    .chatId(String.valueOf(user.getId()))
+                                    .text("Неверный формат данных")
+                                    .replyMarkup(ReplyKeyboardMarkup.builder()
+                                            .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("Парни"), new KeyboardButton("Девушки"))))
+                                            .resizeKeyboard(true)
+                                            .build())
+                                    .build());
+                            i--;
+                            iteratorUser.replace(user.getId(), i);
+                        }
                         if (iteratorUser.get(user.getId()) == 2) {
                             execute(SendMessage.builder()
                                     .chatId(String.valueOf(user.getId()))
@@ -289,17 +313,6 @@ public class Bot extends TelegramLongPollingBot {
                                             .removeKeyboard(true)
                                             .build())
                                     .build());
-                        }
-                        if (iteratorUser.get(user.getId()) == 2 && message.hasText() && !message.getText().equals("Парни") && !message.getText().equals("Девушки")){
-                            execute(SendMessage.builder()
-                                    .chatId(String.valueOf(user.getId()))
-                                    .text("Нет такого варианта ответа")
-                                    .replyMarkup(ReplyKeyboardMarkup.builder()
-                                            .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("Парни"), new KeyboardButton("Девушки"))))
-                                            .resizeKeyboard(true)
-                                            .build())
-                                    .build());
-                            i--;
                         }
                         i++;
                         iteratorUser.replace(user.getId(), i);
@@ -328,20 +341,8 @@ public class Bot extends TelegramLongPollingBot {
                     throw new RuntimeException(e);
                 }
             }
-        }catch (NullPointerException ignored){
+        } catch (NullPointerException ignored) {
 
-        }
-
-        if (message.hasText() && !message.getText().equals("/start") && !message.getText().equals("/profile") && UserIdAndQuestionnaire.get(user.getId()) == null) {
-            try {
-                execute(SendMessage.builder()
-                        .chatId(String.valueOf(user.getId()))
-                        .text("Для просмотра доступных команд откройте вкладку \"Меню\"")
-                        .build()
-                );
-            } catch (TelegramApiException e) {
-                throw new RuntimeException(e);
-            }
         }
     }
 }
