@@ -20,6 +20,8 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.io.*;
 import java.io.File;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.net.*;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -70,10 +72,17 @@ public class Bot extends TelegramLongPollingBot {
         User user = message.getFrom();
 
         if (message.hasText() && message.getText().equals("/start")) {
+            userResponsesById.remove(user.getId());
+            iteratorUser.remove(user.getId());
+            questionsForEachUser.remove(user.getId());
+            UserIdAndQuestionnaire.remove(user.getId());
             try {
                 execute(SendMessage.builder()
                         .chatId(String.valueOf(user.getId()))
                         .text("Привет " + user.getFirstName())
+                        .replyMarkup(ReplyKeyboardRemove.builder()
+                                .removeKeyboard(true)
+                                .build())
                         .build());
             } catch (TelegramApiException e) {
                 throw new RuntimeException(e);
@@ -98,9 +107,9 @@ public class Bot extends TelegramLongPollingBot {
                             .build());
                     execute(SendMessage.builder()
                             .chatId(String.valueOf(user.getId()))
-                            .text("Хотите ли вы изменить вашу анкету?")
+                            .text("1.Смотреть анкеты\n2.Заполнить анкету заново")
                             .replyMarkup(ReplyKeyboardMarkup.builder()
-                                    .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("Да"), new KeyboardButton("Нет"))))
+                                    .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("1"), new KeyboardButton("2"))))
                                     .resizeKeyboard(true)
                                     .build())
                             .build());
@@ -146,7 +155,7 @@ public class Bot extends TelegramLongPollingBot {
                 }
             }
 
-            if (message.hasText() && !UserIdAndQuestionnaire.get(user.getId()) && message.getText().equals("Да")) {
+            if (message.hasText() && !UserIdAndQuestionnaire.get(user.getId()) && message.getText().equals("2")) {
                 UserIdAndQuestionnaire.replace(user.getId(), true);
                 userResponsesById.put(user.getId(), userResponses);
                 iteratorUser.put(user.getId(), 0);
@@ -164,185 +173,208 @@ public class Bot extends TelegramLongPollingBot {
                                     .build())
                             .build());
                 }
-            }
-
-            if (!message.hasText() && !UserIdAndQuestionnaire.get(user.getId()) && !message.getText().equals("Нет") && !message.getText().equals("Да") && !message.getText().equals("/profile") && !message.getText().equals("/start")
-                    || message.hasText() && !UserIdAndQuestionnaire.get(user.getId()) && !message.getText().equals("Нет") && !message.getText().equals("Да") && !message.getText().equals("/profile") && !message.getText().equals("/start")) {
+            }else if (!message.hasText() && !UserIdAndQuestionnaire.get(user.getId()) || message.hasText() && !UserIdAndQuestionnaire.get(user.getId()) && !message.getText().equals("1") && !message.getText().equals("2") && !message.getText().equals("/profile") && !message.getText().equals("/start")) {
                 execute(SendMessage.builder()
                         .chatId(String.valueOf(user.getId()))
                         .text("Нет такого варианта ответа")
                         .replyMarkup(ReplyKeyboardMarkup.builder()
-                                .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("Да"), new KeyboardButton("Нет"))))
+                                .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("1"), new KeyboardButton("2"))))
                                 .resizeKeyboard(true)
                                 .build())
                         .build());
             }
+
         } catch (NullPointerException ignored) {
 
         } catch (TelegramApiException e) {
             throw new RuntimeException(e);
         }
 
-        try {
-            if (UserIdAndQuestionnaire.get(user.getId()) != null && profilesByIdUser.get(user.getId()) == null || message.hasPhoto() && UserIdAndQuestionnaire.get(user.getId()) != null && profilesByIdUser.get(user.getId()) == null) {
-                int i = iteratorUser.get(user.getId());
-                String str = message.getText();
-                if (i == 1) {
-                    userResponses.put("Имя", str);
-                }
-                if (i == 2 && str.matches("\\d[0-99]") || i == 2 && !str.matches("\\d[0-99]")) {
-                    try {
-                        if (Integer.parseInt(str) > 0 && Integer.parseInt(str) < 100) {
-                            userResponses.put("Возраст", str);
-                        } else {
-                            try {
-                                execute(SendMessage.builder()
-                                        .chatId(String.valueOf(user.getId()))
-                                        .text("Введите цифры от 1 до 99.")
-                                        .build());
-                                i--;
-                                iteratorUser.replace(user.getId(), i);
-                            } catch (TelegramApiException e) {
-                                throw new RuntimeException(e);
-                            }
-                        }
-                    } catch (NumberFormatException numberFormatException) {
-                        try {
-                            execute(SendMessage.builder()
-                                    .chatId(String.valueOf(user.getId()))
-                                    .text("Неверный формат данных или неверный диапозан возраста. " +
-                                            "Введите цифры от 1 до 99.")
-                                    .build());
-                        } catch (TelegramApiException e) {
-                            throw new RuntimeException(e);
-                        }
-                        i--;
-                        iteratorUser.replace(user.getId(), i);
-                    }
-                }
-                if (i == 3) {
-                    userResponses.put("Пол", str);
-                }
-                if (i == 4) {
-                    userResponses.put("Город", str);
-                }
-                if (i == 5) {
-                    userResponses.put("Описание", str);
-                }
-                if (i == 6) {
-                    try {
-                        photos.put(user.getId(), message.getPhoto().get(message.getPhoto().size() - 1).getFileId());
-                        HttpClient httpClient = HttpClient.newHttpClient();
-                        HttpRequest httpRequest = HttpRequest.newBuilder()
-                                .uri(URI.create("https://api.telegram.org/bot" + botToken + "/getFile?file_id=" + photos.get(user.getId())))
-                                .build();
-                        try {
-                            HttpResponse<String> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-                            ObjectMapper objectMapper = new ObjectMapper();
-                            try {
-                                String UserPhotoJSON = httpResponse.body();
-                                UserPhoto json = objectMapper.readValue(UserPhotoJSON, UserPhoto.class);
-                                BufferedInputStream bufferedInputStream = new BufferedInputStream(new URL("https://api.telegram.org/file/bot" + botToken + "/" + json.getResult().getFilePath()).openStream());
-                                FileOutputStream fileOutputStream = new FileOutputStream("src/main/resources/static/" + "фото_анкеты_пользователя_id" + user.getId() + ".jpg");
-                                byte[] bytes = new byte[1024];
-                                int byteRead = -1;
-                                while ((byteRead = bufferedInputStream.read(bytes)) != -1) {
-                                    fileOutputStream.write(bytes, 0, byteRead);
-                                }
-                                bufferedInputStream.close();
-                                fileOutputStream.close();
-                            } catch (Exception e) {
-                                e.printStackTrace();
-                            }
-                        } catch (IOException | InterruptedException e) {
-                            throw new RuntimeException(e);
-                        }
-                        userResponses.put("Фото", "src/main/resources/static/" + "фото_анкеты_пользователя_id" + user.getId() + ".jpg");
-                    } catch (NullPointerException nullPointerException) {
-                        try {
-                            execute(SendMessage.builder()
-                                    .chatId(String.valueOf(user.getId()))
-                                    .text("Ошибка!")
-                                    .build());
-                            i--;
-                            iteratorUser.replace(user.getId(), i);
-                        } catch (TelegramApiException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }
-                }
+        if (UserIdAndQuestionnaire.get(user.getId()) != null && profilesByIdUser.get(user.getId()) == null || message.hasPhoto() && UserIdAndQuestionnaire.get(user.getId()) != null && profilesByIdUser.get(user.getId()) == null) {
+            int i = iteratorUser.get(user.getId());
+            if (i == 1 && message.hasText()) {
+                userResponses.put("Имя", message.getText());
+            } else if (i == 1 && !message.hasText()) {
                 try {
-                    if (iteratorUser.get(user.getId()) <= questions.size() - 1) {
-                        if (message.hasText() && iteratorUser.get(user.getId()) == 3 && !message.getText().equals("Парни") && !message.getText().equals("Девушки")) {
-                            execute(SendMessage.builder()
-                                    .chatId(String.valueOf(user.getId()))
-                                    .text("Нет такого варианта ответа")
-                                    .replyMarkup(ReplyKeyboardMarkup.builder()
-                                            .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("Парни"), new KeyboardButton("Девушки"))))
-                                            .resizeKeyboard(true)
-                                            .build())
-                                    .build());
-                            i--;
-                            iteratorUser.replace(user.getId(), i);
-                        } else if (!message.hasText()) {
-                            execute(SendMessage.builder()
-                                    .chatId(String.valueOf(user.getId()))
-                                    .text("Неверный формат данных")
-                                    .replyMarkup(ReplyKeyboardMarkup.builder()
-                                            .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("Парни"), new KeyboardButton("Девушки"))))
-                                            .resizeKeyboard(true)
-                                            .build())
-                                    .build());
-                            i--;
-                            iteratorUser.replace(user.getId(), i);
-                        }
-                        if (iteratorUser.get(user.getId()) == 2) {
-                            execute(SendMessage.builder()
-                                    .chatId(String.valueOf(user.getId()))
-                                    .text(questionsForEachUser.get(user.getId()).get(iteratorUser.get(user.getId())))
-                                    .replyMarkup(ReplyKeyboardMarkup.builder()
-                                            .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("Парни"), new KeyboardButton("Девушки"))))
-                                            .resizeKeyboard(true)
-                                            .build())
-                                    .build());
-                        } else {
-                            execute(SendMessage.builder()
-                                    .chatId(String.valueOf(user.getId()))
-                                    .text(questionsForEachUser.get(user.getId()).get(iteratorUser.get(user.getId())))
-                                    .replyMarkup(ReplyKeyboardRemove.builder()
-                                            .removeKeyboard(true)
-                                            .build())
-                                    .build());
-                        }
-                        i++;
-                        iteratorUser.replace(user.getId(), i);
+                    execute(SendMessage.builder()
+                            .chatId(String.valueOf(user.getId()))
+                            .text("Неверный формат данных")
+                            .build());
+                    i--;
+                    iteratorUser.replace(user.getId(), i);
+                }catch (TelegramApiException ignored){
+
+                }
+            }
+            if (!message.hasText() && i == 2 || i == 2 && message.getText().matches("\\d[0-99]") || i == 2 && !message.getText().matches("\\d[0-99]")) {
+                try {
+                    if (Integer.parseInt(message.getText()) > 0 && Integer.parseInt(message.getText()) < 100) {
+                        userResponses.put("Возраст", message.getText());
                     } else {
+                        try {
+                            execute(SendMessage.builder()
+                                    .chatId(String.valueOf(user.getId()))
+                                    .text("Введите цифры от 1 до 99.")
+                                    .build());
+                            i--;
+                            iteratorUser.replace(user.getId(), i);
+                        } catch (TelegramApiException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+                } catch (NumberFormatException numberFormatException) {
+                    try {
                         execute(SendMessage.builder()
                                 .chatId(String.valueOf(user.getId()))
-                                .text("Вы успешно заполнили вашу анкету")
-                                .replyMarkup(ReplyKeyboardRemove.builder()
-                                        .removeKeyboard(true)
-                                        .build())
+                                .text("Неверный формат данных. Введите цифры от 1 до 99.")
                                 .build());
-                        jdbcTemplate.update("INSERT INTO user_profiles(user_profiles_id, user_profiles_name, user_profiles_age, user_profiles_sex, user_profiles_city, user_description, photo) VALUES(?, ?, ?, ?, ?, ?, ?)",
-                                user.getId(),
-                                userResponsesById.get(user.getId()).get("Имя"),
-                                Integer.parseInt(userResponsesById.get(user.getId()).get("Возраст")),
-                                userResponsesById.get(user.getId()).get("Пол"),
-                                userResponsesById.get(user.getId()).get("Город"),
-                                userResponsesById.get(user.getId()).get("Описание"),
-                                userResponsesById.get(user.getId()).get("Фото"));
-                        userResponsesById.remove(user.getId());
-                        iteratorUser.remove(user.getId());
-                        questionsForEachUser.remove(user.getId());
-                        UserIdAndQuestionnaire.remove(user.getId());
+                    } catch (TelegramApiException e) {
+                        throw new RuntimeException(e);
                     }
+                    i--;
+                    iteratorUser.replace(user.getId(), i);
+                }
+            }
+            if (i == 3 && message.hasText() && message.getText().equals("Парни") || i == 3 && message.hasText() && message.getText().equals("Девушки")) {
+                userResponses.put("Пол", message.getText());
+            } else if (!message.hasText() && i == 3 || message.hasText() && i == 3 && !message.getText().equals("Парни") && !message.getText().equals("Девушки")) {
+                try {
+                    execute(SendMessage.builder()
+                            .chatId(String.valueOf(user.getId()))
+                            .text("Нет такого варианта ответа")
+                            .replyMarkup(ReplyKeyboardMarkup.builder()
+                                    .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("Парни"), new KeyboardButton("Девушки"))))
+                                    .resizeKeyboard(true)
+                                    .build())
+                            .build());
+                } catch (TelegramApiException e) {
+                    throw new RuntimeException(e);
+                }
+                i--;
+                iteratorUser.replace(user.getId(), i);
+            }
+            if (i == 4 && message.hasText()) {
+                userResponses.put("Город", message.getText());
+            } else if (i == 4 && !message.hasText()) {
+                try {
+                    execute(SendMessage.builder()
+                            .chatId(String.valueOf(user.getId()))
+                            .text("Неверный формат данных")
+                            .build());
+                } catch (TelegramApiException e) {
+                    throw new RuntimeException(e);
+                }
+                i--;
+                iteratorUser.replace(user.getId(), i);
+            }
+            if (i == 5 && message.hasText()) {
+                userResponses.put("Описание", message.getText());
+            } else if (i == 5 && !message.hasText()) {
+                try {
+                    execute(SendMessage.builder()
+                            .chatId(String.valueOf(user.getId()))
+                            .text("Неверный формат данных")
+                            .build());
+                } catch (TelegramApiException e) {
+                    throw new RuntimeException(e);
+                }
+                i--;
+                iteratorUser.replace(user.getId(), i);
+            }
+            if (i == 6 && message.hasPhoto()) {
+                    photos.put(user.getId(), message.getPhoto().get(message.getPhoto().size() - 1).getFileId());
+                    HttpClient httpClient = HttpClient.newHttpClient();
+                    HttpRequest httpRequest = HttpRequest.newBuilder()
+                            .uri(URI.create("https://api.telegram.org/bot" + botToken + "/getFile?file_id=" + photos.get(user.getId())))
+                            .build();
+                    try {
+                        HttpResponse<String> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+                        ObjectMapper objectMapper = new ObjectMapper();
+                        try {
+                            String UserPhotoJSON = httpResponse.body();
+                            UserPhoto json = objectMapper.readValue(UserPhotoJSON, UserPhoto.class);
+                            BufferedInputStream bufferedInputStream = new BufferedInputStream(new URL("https://api.telegram.org/file/bot" + botToken + "/" + json.getResult().getFilePath()).openStream());
+                            FileOutputStream fileOutputStream = new FileOutputStream("src/main/resources/static/" + "фото_анкеты_пользователя_id" + user.getId() + ".jpg");
+                            byte[] bytes = new byte[1024];
+                            int byteRead = -1;
+                            while ((byteRead = bufferedInputStream.read(bytes)) != -1) {
+                                fileOutputStream.write(bytes, 0, byteRead);
+                            }
+                            bufferedInputStream.close();
+                            fileOutputStream.close();
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    } catch (IOException | InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
+                    userResponses.put("Фото", "src/main/resources/static/" + "фото_анкеты_пользователя_id" + user.getId() + ".jpg");
+            } else if (i == 6 && !message.hasPhoto()) {
+                try {
+                    execute(SendMessage.builder()
+                            .chatId(String.valueOf(user.getId()))
+                            .text("Ошибка!")
+                            .build());
+                    i--;
+                    iteratorUser.replace(user.getId(), i);
                 } catch (TelegramApiException e) {
                     throw new RuntimeException(e);
                 }
             }
-        } catch (NullPointerException ignored) {
-
+            if (iteratorUser.get(user.getId()) <= questions.size() - 1) {
+                if (iteratorUser.get(user.getId()) == 2) {
+                    try {
+                        execute(SendMessage.builder()
+                                .chatId(String.valueOf(user.getId()))
+                                .text(questionsForEachUser.get(user.getId()).get(iteratorUser.get(user.getId())))
+                                .replyMarkup(ReplyKeyboardMarkup.builder()
+                                        .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("Парни"), new KeyboardButton("Девушки"))))
+                                        .resizeKeyboard(true)
+                                        .build())
+                                .build());
+                    } catch (TelegramApiException e) {
+                        throw new RuntimeException(e);
+                    }
+                } else {
+                    try {
+                        execute(SendMessage.builder()
+                                .chatId(String.valueOf(user.getId()))
+                                .text(questionsForEachUser.get(user.getId()).get(iteratorUser.get(user.getId())))
+                                .replyMarkup(ReplyKeyboardRemove.builder()
+                                        .removeKeyboard(true)
+                                        .build())
+                                .build());
+                    } catch (TelegramApiException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+                i++;
+                iteratorUser.replace(user.getId(), i);
+            } else {
+                try {
+                    execute(SendMessage.builder()
+                            .chatId(String.valueOf(user.getId()))
+                            .text("Вы успешно заполнили вашу анкету")
+                            .replyMarkup(ReplyKeyboardRemove.builder()
+                                    .removeKeyboard(true)
+                                    .build())
+                            .build());
+                } catch (TelegramApiException e) {
+                    throw new RuntimeException(e);
+                }
+                jdbcTemplate.update("INSERT INTO user_profiles(user_profiles_id, user_profiles_name, user_profiles_age, user_profiles_sex, user_profiles_city, user_description, photo) VALUES(?, ?, ?, ?, ?, ?, ?)",
+                        user.getId(),
+                        userResponsesById.get(user.getId()).get("Имя"),
+                        Integer.parseInt(userResponsesById.get(user.getId()).get("Возраст")),
+                        userResponsesById.get(user.getId()).get("Пол"),
+                        userResponsesById.get(user.getId()).get("Город"),
+                        userResponsesById.get(user.getId()).get("Описание"),
+                        userResponsesById.get(user.getId()).get("Фото"));
+                userResponsesById.remove(user.getId());
+                iteratorUser.remove(user.getId());
+                questionsForEachUser.remove(user.getId());
+                UserIdAndQuestionnaire.remove(user.getId());
+            }
         }
     }
 }
