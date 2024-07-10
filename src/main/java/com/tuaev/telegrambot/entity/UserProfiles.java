@@ -9,6 +9,7 @@ public class UserProfiles{
     private String user_profiles_city;
     private String user_description;
     private String photo;
+    private boolean status;
 
     public String getUser_profiles_id() {
         return user_profiles_id;
@@ -64,5 +65,13 @@ public class UserProfiles{
 
     public void setPhoto(String photo) {
         this.photo = photo;
+    }
+
+    public boolean isStatus() {
+        return status;
+    }
+
+    public void setStatus(boolean status) {
+        this.status = status;
     }
 }

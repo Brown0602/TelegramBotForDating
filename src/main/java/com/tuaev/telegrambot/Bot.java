@@ -18,6 +18,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.Keyboard
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
+import javax.swing.text.html.Option;
 import java.io.*;
 import java.io.File;
 import java.math.BigDecimal;
@@ -36,6 +37,8 @@ public class Bot extends TelegramLongPollingBot {
     String botUsername;
     @Value("${bot.token}")
     String botToken;
+    private final Map<Long, UserProfiles> aProfileForTheUser = new HashMap<>();
+    private final Map<Long, Boolean> viewingProfiles = new HashMap<>();
     private final Map<Long, UserProfiles> profilesByIdUser = new HashMap<>();
     private final Map<String, String> userResponses = new HashMap<>();
     private final Map<Long, Map<String, String>> userResponsesById = new HashMap<>();
@@ -72,6 +75,11 @@ public class Bot extends TelegramLongPollingBot {
         User user = message.getFrom();
 
         if (message.hasText() && message.getText().equals("/start")) {
+//            for (int i = 101; i <= 200; i++){
+//                Random random = new Random();
+//                int rad = random.nextInt(1, 100);
+//                jdbcTemplate.update("INSERT INTO user_profiles(user_profiles_id, user_profiles_name, user_profiles_age, user_profiles_sex, user_profiles_city, user_description, photo, status) VALUES(?, ?, ?, ?, ?, ?, ?, ?)", i, "", rad, "Парни", "Москва", "", "", true);
+//            }
             userResponsesById.remove(user.getId());
             iteratorUser.remove(user.getId());
             questionsForEachUser.remove(user.getId());
@@ -133,28 +141,6 @@ public class Bot extends TelegramLongPollingBot {
             }
         }
 
-        try {
-            if (message.hasText() && !UserIdAndQuestionnaire.get(user.getId()) && message.getText().equals("Нет")) {
-                try {
-                    execute(SendMessage.builder()
-                            .chatId(String.valueOf(user.getId()))
-                            .text("Так выглядит ваша анкета:")
-                            .replyMarkup(ReplyKeyboardRemove.builder()
-                                    .removeKeyboard(true)
-                                    .build())
-                            .build());
-                    execute(SendPhoto.builder()
-                            .chatId(String.valueOf(user.getId()))
-                            .photo(new InputFile(new File("src/main/resources/static/" + "фото_анкеты_пользователя_id" + user.getId() + ".jpg")))
-                            .caption(profilesByIdUser.get(user.getId()).getUser_profiles_name() + ", " + profilesByIdUser.get(user.getId()).getUser_profiles_age() + ", "
-                                    + profilesByIdUser.get(user.getId()).getUser_profiles_city() + ", " + profilesByIdUser.get(user.getId()).getUser_description())
-                            .build());
-                    profilesByIdUser.remove(user.getId());
-                } catch (TelegramApiException ignored) {
-
-                }
-            }
-
             if (message.hasText() && !UserIdAndQuestionnaire.get(user.getId()) && message.getText().equals("2")) {
                 UserIdAndQuestionnaire.replace(user.getId(), true);
                 userResponsesById.put(user.getId(), userResponses);
@@ -165,30 +151,63 @@ public class Bot extends TelegramLongPollingBot {
                     UserProfiles userProfiles = jdbcTemplate.queryForObject("SELECT * FROM user_profiles WHERE user_profiles_id = ?", new UserProfilesRowMapper(), String.valueOf(user.getId()));
                 } catch (EmptyResultDataAccessException ignored) {
                     profilesByIdUser.put(user.getId(), null);
+                    try {
+                        execute(SendMessage.builder()
+                                .chatId(String.valueOf(user.getId()))
+                                .text("Давайте заполним вашу анкету заново")
+                                .replyMarkup(ReplyKeyboardRemove.builder()
+                                        .removeKeyboard(true)
+                                        .build())
+                                .build());
+                    }catch (TelegramApiException ignored1){
+
+                    }
+                }
+            } else if (message.hasText() && !UserIdAndQuestionnaire.get(user.getId()) && message.getText().equals("1")) {
+                viewingProfiles.put(user.getId(), true);
+            } else if (!message.hasText() && !UserIdAndQuestionnaire.get(user.getId()) || message.hasText() && !UserIdAndQuestionnaire.get(user.getId()) && !message.getText().equals("1") && !message.getText().equals("2") && !message.getText().equals("/profile") && !message.getText().equals("/start")) {
+                try {
                     execute(SendMessage.builder()
                             .chatId(String.valueOf(user.getId()))
-                            .text("Давайте заполним вашу анкету заново")
-                            .replyMarkup(ReplyKeyboardRemove.builder()
-                                    .removeKeyboard(true)
+                            .text("Нет такого варианта ответа")
+                            .replyMarkup(ReplyKeyboardMarkup.builder()
+                                    .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("1"), new KeyboardButton("2"))))
+                                    .resizeKeyboard(true)
                                     .build())
                             .build());
+                }catch (TelegramApiException ignored){
                 }
-            }else if (!message.hasText() && !UserIdAndQuestionnaire.get(user.getId()) || message.hasText() && !UserIdAndQuestionnaire.get(user.getId()) && !message.getText().equals("1") && !message.getText().equals("2") && !message.getText().equals("/profile") && !message.getText().equals("/start")) {
-                execute(SendMessage.builder()
-                        .chatId(String.valueOf(user.getId()))
-                        .text("Нет такого варианта ответа")
-                        .replyMarkup(ReplyKeyboardMarkup.builder()
-                                .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("1"), new KeyboardButton("2"))))
-                                .resizeKeyboard(true)
-                                .build())
-                        .build());
             }
-
-        } catch (NullPointerException ignored) {
-
-        } catch (TelegramApiException e) {
-            throw new RuntimeException(e);
-        }
+            if (viewingProfiles.get(user.getId()) && message.hasText() && message.getText().equals("1")){
+                Optional<Integer> theNumberOfRecordsInTheTable = Optional.ofNullable(
+                        jdbcTemplate.queryForObject("SELECT COUNT(*) FROM user_profiles WHERE NOT user_profiles_sex = ? AND user_profiles_city = ?\n" +
+                                        "AND user_profiles_age BETWEEN ? AND ?",
+                                Integer.class,
+                                profilesByIdUser.get(user.getId()).getUser_profiles_sex(),
+                                profilesByIdUser.get(user.getId()).getUser_profiles_city(),
+                                profilesByIdUser.get(user.getId()).getUser_profiles_age() - 5,
+                                profilesByIdUser.get(user.getId()).getUser_profiles_age() + 5)
+                );
+                Optional<UserProfiles> userProfiles = Optional.ofNullable(
+                        jdbcTemplate.queryForObject(
+                                "SELECT * FROM user_profiles WHERE NOT user_profiles_sex = ? AND user_profiles_city = ?\n" +
+                                        "AND user_profiles_age BETWEEN ? AND ?\n" +
+                                        "OFFSET FLOOR(random() * ?) LIMIT 1",
+                                new UserProfilesRowMapper(),
+                                profilesByIdUser.get(user.getId()).getUser_profiles_sex(),
+                                profilesByIdUser.get(user.getId()).getUser_profiles_city(),
+                                profilesByIdUser.get(user.getId()).getUser_profiles_age() - 5,
+                                profilesByIdUser.get(user.getId()).getUser_profiles_age() + 5,
+                                theNumberOfRecordsInTheTable.get())
+                );
+                aProfileForTheUser.put(user.getId(), userProfiles.get());
+                try{
+                    execute(SendMessage.builder()
+                            .chatId(String.valueOf(user.getId()))
+                            .text(aProfileForTheUser.get(user.getId()).getUser_profiles_city())
+                            .build());
+                }catch (TelegramApiException ignored){}
+            }
 
         if (UserIdAndQuestionnaire.get(user.getId()) != null && profilesByIdUser.get(user.getId()) == null || message.hasPhoto() && UserIdAndQuestionnaire.get(user.getId()) != null && profilesByIdUser.get(user.getId()) == null) {
             int i = iteratorUser.get(user.getId());
