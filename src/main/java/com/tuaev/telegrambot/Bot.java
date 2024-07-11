@@ -5,7 +5,6 @@ import com.tuaev.telegrambot.entity.UserProfiles;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.PropertySource;
-import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
@@ -18,11 +17,8 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.Keyboard
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
-import javax.swing.text.html.Option;
 import java.io.*;
 import java.io.File;
-import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.net.*;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -37,15 +33,14 @@ public class Bot extends TelegramLongPollingBot {
     String botUsername;
     @Value("${bot.token}")
     String botToken;
-    private final Map<Long, UserProfiles> aProfileForTheUser = new HashMap<>();
-    private final Map<Long, Boolean> viewingProfiles = new HashMap<>();
+    private final Map<Long, List<Map<String, Object>>> aProfileForTheUser = new HashMap<>();
     private final Map<Long, UserProfiles> profilesByIdUser = new HashMap<>();
     private final Map<String, String> userResponses = new HashMap<>();
     private final Map<Long, Map<String, String>> userResponsesById = new HashMap<>();
     private final List<String> questions = List.of("Как вас зовут?", "Сколько вам лет?", "Вам интересны парни или девушки?", "Из какого вы города?", "Расскажите о себе", "Пришлите для вашей анкеты фото");
     private final Map<Long, Integer> iteratorUser = new HashMap<>();
     private final Map<Long, List<String>> questionsForEachUser = new HashMap<>();
-    private final Map<Long, Boolean> UserIdAndQuestionnaire = new HashMap<>();
+    private final Map<Long, Boolean> creates = new HashMap<>();
     private final Map<Long, String> photos = new HashMap<>();
     JdbcTemplate jdbcTemplate;
 
@@ -74,142 +69,123 @@ public class Bot extends TelegramLongPollingBot {
         Message message = update.getMessage();
         User user = message.getFrom();
 
-        if (message.hasText() && message.getText().equals("/start")) {
-//            for (int i = 101; i <= 200; i++){
-//                Random random = new Random();
-//                int rad = random.nextInt(1, 100);
-//                jdbcTemplate.update("INSERT INTO user_profiles(user_profiles_id, user_profiles_name, user_profiles_age, user_profiles_sex, user_profiles_city, user_description, photo, status) VALUES(?, ?, ?, ?, ?, ?, ?, ?)", i, "", rad, "Парни", "Москва", "", "", true);
-//            }
-            userResponsesById.remove(user.getId());
-            iteratorUser.remove(user.getId());
-            questionsForEachUser.remove(user.getId());
-            UserIdAndQuestionnaire.remove(user.getId());
+        if (message.hasText() && message.getText().equals("/profile") && Boolean.TRUE.equals(jdbcTemplate.queryForObject("SELECT EXISTS(SELECT * FROM user_profiles WHERE user_profiles_id = ?)", Boolean.class, String.valueOf(user.getId())))) {
+            UserProfiles userProfiles = jdbcTemplate.queryForObject("SELECT * FROM user_profiles WHERE user_profiles_id = ?", new UserProfilesRowMapper(), String.valueOf(user.getId()));
+            profilesByIdUser.put(user.getId(), userProfiles);
             try {
                 execute(SendMessage.builder()
                         .chatId(String.valueOf(user.getId()))
-                        .text("Привет " + user.getFirstName())
-                        .replyMarkup(ReplyKeyboardRemove.builder()
-                                .removeKeyboard(true)
+                        .text("Так выглядит твоя анкета:")
+                        .build());
+                execute(SendPhoto.builder()
+                        .chatId(String.valueOf(user.getId()))
+                        .photo(new InputFile(new File("src/main/resources/static/" + "фото_анкеты_пользователя_id" + user.getId() + ".jpg")))
+                        .caption(profilesByIdUser.get(user.getId()).getUser_profiles_name() + ", " + profilesByIdUser.get(user.getId()).getUser_profiles_age() + ", "
+                                + profilesByIdUser.get(user.getId()).getUser_profiles_city() + ", " + profilesByIdUser.get(user.getId()).getUser_description())
+                        .build());
+                execute(SendMessage.builder()
+                        .chatId(String.valueOf(user.getId()))
+                        .text("Что ты хочешь сделать?\n1. Смотреть анкеты\n2. Заполнить анкету заново\n3. Сделать анкету неактивной")
+                        .replyMarkup(ReplyKeyboardMarkup.builder()
+                                .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("1"), new KeyboardButton("2"), new KeyboardButton("3"))))
+                                .resizeKeyboard(true)
                                 .build())
                         .build());
             } catch (TelegramApiException e) {
                 throw new RuntimeException(e);
             }
+        } else if (message.hasText() && message.getText().equals("/profile") &&
+                Boolean.FALSE.equals(jdbcTemplate.queryForObject("SELECT EXISTS(SELECT * FROM user_profiles WHERE user_profiles_id = ?)", Boolean.class, String.valueOf(user.getId())))) {
+            try {
+                execute(SendMessage.builder()
+                        .chatId(String.valueOf(user.getId()))
+                        .text("Отлично! Давайте создадим вашу анкету.")
+                        .build());
+            } catch (TelegramApiException e) {
+                throw new RuntimeException(e);
+            }
+            creates.put(user.getId(), true);
+            userResponsesById.put(user.getId(), userResponses);
+            iteratorUser.put(user.getId(), 0);
+            questionsForEachUser.put(user.getId(), questions);
         }
 
-        if (message.hasText() && message.getText().equals("/profile")) {
-            Boolean check = jdbcTemplate.queryForObject("SELECT EXISTS(SELECT user_profiles.user_profiles_id FROM user_profiles WHERE user_profiles_id = ?);", Boolean.class, String.valueOf(user.getId()));
-            if (Boolean.TRUE.equals(check)) {
-                UserProfiles userProfiles = jdbcTemplate.queryForObject("SELECT * FROM user_profiles WHERE user_profiles_id = ?", new UserProfilesRowMapper(), String.valueOf(user.getId()));
-                profilesByIdUser.put(user.getId(), userProfiles);
-                try {
-                    execute(SendMessage.builder()
-                            .chatId(String.valueOf(user.getId()))
-                            .text("Так выглядит ваша анкета:")
-                            .build());
-                    execute(SendPhoto.builder()
-                            .chatId(String.valueOf(user.getId()))
-                            .photo(new InputFile(new File("src/main/resources/static/" + "фото_анкеты_пользователя_id" + user.getId() + ".jpg")))
-                            .caption(profilesByIdUser.get(user.getId()).getUser_profiles_name() + ", " + profilesByIdUser.get(user.getId()).getUser_profiles_age() + ", "
-                                    + profilesByIdUser.get(user.getId()).getUser_profiles_city() + ", " + profilesByIdUser.get(user.getId()).getUser_description())
-                            .build());
-                    execute(SendMessage.builder()
-                            .chatId(String.valueOf(user.getId()))
-                            .text("1.Смотреть анкеты\n2.Заполнить анкету заново")
-                            .replyMarkup(ReplyKeyboardMarkup.builder()
-                                    .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("1"), new KeyboardButton("2"))))
-                                    .resizeKeyboard(true)
-                                    .build())
-                            .build());
-                    UserIdAndQuestionnaire.put(user.getId(), false);
-                } catch (TelegramApiException e) {
-                    throw new RuntimeException(e);
-                }
-            } else {
-                try {
-                    execute(SendMessage.builder()
-                            .chatId(String.valueOf(user.getId()))
-                            .text("Отлично! Давайте создадим вашу анкету.")
-                            .build());
-                } catch (TelegramApiException e) {
-                    throw new RuntimeException(e);
-                }
-                userResponsesById.put(user.getId(), userResponses);
-                iteratorUser.put(user.getId(), 0);
-                questionsForEachUser.put(user.getId(), questions);
-                UserIdAndQuestionnaire.put(user.getId(), true);
+        if (message.hasText() && Boolean.TRUE.equals(jdbcTemplate.queryForObject("SELECT EXISTS(SELECT * FROM user_profiles WHERE user_profiles_id = ?)", Boolean.class, String.valueOf(user.getId()))) && message.getText().equals("2")) {
+            creates.put(user.getId(), true);
+            userResponsesById.put(user.getId(), userResponses);
+            iteratorUser.put(user.getId(), 0);
+            questionsForEachUser.put(user.getId(), questions);
+            jdbcTemplate.update("DELETE FROM user_profiles WHERE user_profiles_id = ?", String.valueOf(user.getId()));
+            try {
+                execute(SendMessage.builder()
+                        .chatId(String.valueOf(user.getId()))
+                        .text("Давайте заполним вашу анкету заново")
+                        .replyMarkup(ReplyKeyboardRemove.builder()
+                                .removeKeyboard(true)
+                                .build())
+                        .build());
+            } catch (TelegramApiException ignored) {
+
             }
         }
 
-            if (message.hasText() && !UserIdAndQuestionnaire.get(user.getId()) && message.getText().equals("2")) {
-                UserIdAndQuestionnaire.replace(user.getId(), true);
-                userResponsesById.put(user.getId(), userResponses);
-                iteratorUser.put(user.getId(), 0);
-                questionsForEachUser.put(user.getId(), questions);
-                jdbcTemplate.update("DELETE FROM user_profiles WHERE user_profiles_id = ?", String.valueOf(user.getId()));
-                try {
-                    UserProfiles userProfiles = jdbcTemplate.queryForObject("SELECT * FROM user_profiles WHERE user_profiles_id = ?", new UserProfilesRowMapper(), String.valueOf(user.getId()));
-                } catch (EmptyResultDataAccessException ignored) {
-                    profilesByIdUser.put(user.getId(), null);
-                    try {
-                        execute(SendMessage.builder()
-                                .chatId(String.valueOf(user.getId()))
-                                .text("Давайте заполним вашу анкету заново")
-                                .replyMarkup(ReplyKeyboardRemove.builder()
-                                        .removeKeyboard(true)
-                                        .build())
-                                .build());
-                    }catch (TelegramApiException ignored1){
-
-                    }
-                }
-            } else if (message.hasText() && !UserIdAndQuestionnaire.get(user.getId()) && message.getText().equals("1")) {
-                viewingProfiles.put(user.getId(), true);
-            } else if (!message.hasText() && !UserIdAndQuestionnaire.get(user.getId()) || message.hasText() && !UserIdAndQuestionnaire.get(user.getId()) && !message.getText().equals("1") && !message.getText().equals("2") && !message.getText().equals("/profile") && !message.getText().equals("/start")) {
-                try {
-                    execute(SendMessage.builder()
-                            .chatId(String.valueOf(user.getId()))
-                            .text("Нет такого варианта ответа")
-                            .replyMarkup(ReplyKeyboardMarkup.builder()
-                                    .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("1"), new KeyboardButton("2"))))
-                                    .resizeKeyboard(true)
-                                    .build())
-                            .build());
-                }catch (TelegramApiException ignored){
-                }
+        if (Boolean.TRUE.equals(jdbcTemplate.queryForObject("SELECT EXISTS(SELECT user_profiles.status FROM user_profiles WHERE user_profiles_id = ?)", Boolean.class, String.valueOf(user.getId()))) && message.hasText() && message.getText().equals("1")) {
+            UserProfiles userProfiles1 = jdbcTemplate.queryForObject("SELECT * FROM user_profiles WHERE user_profiles_id = ?", new UserProfilesRowMapper(), String.valueOf(user.getId()));
+            profilesByIdUser.put(user.getId(), userProfiles1);
+            Optional<List<Map<String, Object>>> userProfiles = Optional.of(
+                    jdbcTemplate.queryForList(
+                            "SELECT * FROM user_profiles WHERE NOT user_profiles_sex = ? AND user_profiles_city = ?\n" +
+                                    "AND user_profiles_age BETWEEN ? AND ?",
+                            profilesByIdUser.get(user.getId()).getUser_profiles_sex(),
+                            profilesByIdUser.get(user.getId()).getUser_profiles_city(),
+                            profilesByIdUser.get(user.getId()).getUser_profiles_age() - 5,
+                            profilesByIdUser.get(user.getId()).getUser_profiles_age() + 5
+                            )
+            );
+            aProfileForTheUser.put(user.getId(), userProfiles.get());
+            try {
+                Random random = new Random();
+                int rand = random.nextInt(0, userProfiles.get().size());
+                execute(SendPhoto.builder()
+                        .chatId(String.valueOf(user.getId()))
+                        .photo(new InputFile(new File(aProfileForTheUser.get(user.getId()).get(rand).get("photo").toString())))
+                        .caption(aProfileForTheUser.get(user.getId()).get(rand).get("user_profiles_name").toString() + "," + " " +
+                                aProfileForTheUser.get(user.getId()).get(rand).get("user_profiles_age").toString() + "," + " " +
+                                aProfileForTheUser.get(user.getId()).get(rand).get("user_profiles_city").toString() + "," + " " +
+                                aProfileForTheUser.get(user.getId()).get(rand).get("user_description").toString())
+                        .build());
+            } catch (TelegramApiException ignored) {
             }
-            if (viewingProfiles.get(user.getId()) && message.hasText() && message.getText().equals("1")){
-                Optional<Integer> theNumberOfRecordsInTheTable = Optional.ofNullable(
-                        jdbcTemplate.queryForObject("SELECT COUNT(*) FROM user_profiles WHERE NOT user_profiles_sex = ? AND user_profiles_city = ?\n" +
-                                        "AND user_profiles_age BETWEEN ? AND ?",
-                                Integer.class,
-                                profilesByIdUser.get(user.getId()).getUser_profiles_sex(),
-                                profilesByIdUser.get(user.getId()).getUser_profiles_city(),
-                                profilesByIdUser.get(user.getId()).getUser_profiles_age() - 5,
-                                profilesByIdUser.get(user.getId()).getUser_profiles_age() + 5)
-                );
-                Optional<UserProfiles> userProfiles = Optional.ofNullable(
-                        jdbcTemplate.queryForObject(
-                                "SELECT * FROM user_profiles WHERE NOT user_profiles_sex = ? AND user_profiles_city = ?\n" +
-                                        "AND user_profiles_age BETWEEN ? AND ?\n" +
-                                        "OFFSET FLOOR(random() * ?) LIMIT 1",
-                                new UserProfilesRowMapper(),
-                                profilesByIdUser.get(user.getId()).getUser_profiles_sex(),
-                                profilesByIdUser.get(user.getId()).getUser_profiles_city(),
-                                profilesByIdUser.get(user.getId()).getUser_profiles_age() - 5,
-                                profilesByIdUser.get(user.getId()).getUser_profiles_age() + 5,
-                                theNumberOfRecordsInTheTable.get())
-                );
-                aProfileForTheUser.put(user.getId(), userProfiles.get());
-                try{
-                    execute(SendMessage.builder()
-                            .chatId(String.valueOf(user.getId()))
-                            .text(aProfileForTheUser.get(user.getId()).getUser_profiles_city())
-                            .build());
-                }catch (TelegramApiException ignored){}
-            }
+        }
 
-        if (UserIdAndQuestionnaire.get(user.getId()) != null && profilesByIdUser.get(user.getId()) == null || message.hasPhoto() && UserIdAndQuestionnaire.get(user.getId()) != null && profilesByIdUser.get(user.getId()) == null) {
+        if (!message.hasText() && Boolean.TRUE.equals(jdbcTemplate.queryForObject("SELECT EXISTS(SELECT * FROM user_profiles WHERE user_profiles_id = ?)", Boolean.class, String.valueOf(user.getId()))) || Boolean.TRUE.equals(jdbcTemplate.queryForObject("SELECT EXISTS(SELECT * FROM user_profiles WHERE user_profiles_id = ?)", Boolean.class, String.valueOf(user.getId()))) && message.hasText() && !message.getText().equals("1") && !message.getText().equals("2") && !message.getText().equals("3") && !message.getText().equals("/profile")) {
+            try {
+                execute(SendMessage.builder()
+                        .chatId(String.valueOf(user.getId()))
+                        .text("Нет такого варианта ответа")
+                        .replyMarkup(ReplyKeyboardMarkup.builder()
+                                .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("1"), new KeyboardButton("2"), new KeyboardButton("3"))))
+                                .resizeKeyboard(true)
+                                .build())
+                        .build());
+            }catch (TelegramApiException ignored){
+
+            }
+        }
+
+        if (Boolean.TRUE.equals(jdbcTemplate.queryForObject("SELECT EXISTS(SELECT * FROM user_profiles WHERE user_profiles_id = ?)", Boolean.class, String.valueOf(user.getId()))) && message.hasText() && message.getText().equals("3")){
+            jdbcTemplate.update("UPDATE user_profiles SET status = ? WHERE user_profiles_id = ?", false, String.valueOf(user.getId()));
+            try {
+                execute(SendMessage.builder()
+                        .chatId(String.valueOf(user.getId()))
+                        .text("Теперь твоя анкета неактивна")
+                        .build());
+            }catch (TelegramApiException e){
+
+            }
+        }
+
+        if (creates.get(user.getId()) != null && creates.get(user.getId()) && Boolean.FALSE.equals(jdbcTemplate.queryForObject("SELECT EXISTS(SELECT * FROM user_profiles WHERE user_profiles_id = ?)", Boolean.class, String.valueOf(user.getId()))) || message.hasPhoto() && creates.get(user.getId()) != null && creates.get(user.getId()) && Boolean.FALSE.equals(jdbcTemplate.queryForObject("SELECT EXISTS(SELECT * FROM user_profiles WHERE user_profiles_id = ?)", Boolean.class, String.valueOf(user.getId())))) {
             int i = iteratorUser.get(user.getId());
             if (i == 1 && message.hasText()) {
                 userResponses.put("Имя", message.getText());
@@ -221,7 +197,7 @@ public class Bot extends TelegramLongPollingBot {
                             .build());
                     i--;
                     iteratorUser.replace(user.getId(), i);
-                }catch (TelegramApiException ignored){
+                } catch (TelegramApiException ignored) {
 
                 }
             }
@@ -301,33 +277,33 @@ public class Bot extends TelegramLongPollingBot {
                 iteratorUser.replace(user.getId(), i);
             }
             if (i == 6 && message.hasPhoto()) {
-                    photos.put(user.getId(), message.getPhoto().get(message.getPhoto().size() - 1).getFileId());
-                    HttpClient httpClient = HttpClient.newHttpClient();
-                    HttpRequest httpRequest = HttpRequest.newBuilder()
-                            .uri(URI.create("https://api.telegram.org/bot" + botToken + "/getFile?file_id=" + photos.get(user.getId())))
-                            .build();
+                photos.put(user.getId(), message.getPhoto().get(message.getPhoto().size() - 1).getFileId());
+                HttpClient httpClient = HttpClient.newHttpClient();
+                HttpRequest httpRequest = HttpRequest.newBuilder()
+                        .uri(URI.create("https://api.telegram.org/bot" + botToken + "/getFile?file_id=" + photos.get(user.getId())))
+                        .build();
+                try {
+                    HttpResponse<String> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+                    ObjectMapper objectMapper = new ObjectMapper();
                     try {
-                        HttpResponse<String> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-                        ObjectMapper objectMapper = new ObjectMapper();
-                        try {
-                            String UserPhotoJSON = httpResponse.body();
-                            UserPhoto json = objectMapper.readValue(UserPhotoJSON, UserPhoto.class);
-                            BufferedInputStream bufferedInputStream = new BufferedInputStream(new URL("https://api.telegram.org/file/bot" + botToken + "/" + json.getResult().getFilePath()).openStream());
-                            FileOutputStream fileOutputStream = new FileOutputStream("src/main/resources/static/" + "фото_анкеты_пользователя_id" + user.getId() + ".jpg");
-                            byte[] bytes = new byte[1024];
-                            int byteRead = -1;
-                            while ((byteRead = bufferedInputStream.read(bytes)) != -1) {
-                                fileOutputStream.write(bytes, 0, byteRead);
-                            }
-                            bufferedInputStream.close();
-                            fileOutputStream.close();
-                        } catch (Exception e) {
-                            e.printStackTrace();
+                        String UserPhotoJSON = httpResponse.body();
+                        UserPhoto json = objectMapper.readValue(UserPhotoJSON, UserPhoto.class);
+                        BufferedInputStream bufferedInputStream = new BufferedInputStream(new URL("https://api.telegram.org/file/bot" + botToken + "/" + json.getResult().getFilePath()).openStream());
+                        FileOutputStream fileOutputStream = new FileOutputStream("src/main/resources/static/" + "фото_анкеты_пользователя_id" + user.getId() + ".jpg");
+                        byte[] bytes = new byte[1024];
+                        int byteRead = -1;
+                        while ((byteRead = bufferedInputStream.read(bytes)) != -1) {
+                            fileOutputStream.write(bytes, 0, byteRead);
                         }
-                    } catch (IOException | InterruptedException e) {
-                        throw new RuntimeException(e);
+                        bufferedInputStream.close();
+                        fileOutputStream.close();
+                    } catch (Exception e) {
+                        e.printStackTrace();
                     }
-                    userResponses.put("Фото", "src/main/resources/static/" + "фото_анкеты_пользователя_id" + user.getId() + ".jpg");
+                } catch (IOException | InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                userResponses.put("Фото", "src/main/resources/static/" + "фото_анкеты_пользователя_id" + user.getId() + ".jpg");
             } else if (i == 6 && !message.hasPhoto()) {
                 try {
                     execute(SendMessage.builder()
@@ -381,18 +357,19 @@ public class Bot extends TelegramLongPollingBot {
                 } catch (TelegramApiException e) {
                     throw new RuntimeException(e);
                 }
-                jdbcTemplate.update("INSERT INTO user_profiles(user_profiles_id, user_profiles_name, user_profiles_age, user_profiles_sex, user_profiles_city, user_description, photo) VALUES(?, ?, ?, ?, ?, ?, ?)",
+                jdbcTemplate.update("INSERT INTO user_profiles(user_profiles_id, user_profiles_name, user_profiles_age, user_profiles_sex, user_profiles_city, user_description, photo, status) VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
                         user.getId(),
                         userResponsesById.get(user.getId()).get("Имя"),
                         Integer.parseInt(userResponsesById.get(user.getId()).get("Возраст")),
                         userResponsesById.get(user.getId()).get("Пол"),
                         userResponsesById.get(user.getId()).get("Город"),
                         userResponsesById.get(user.getId()).get("Описание"),
-                        userResponsesById.get(user.getId()).get("Фото"));
+                        userResponsesById.get(user.getId()).get("Фото"),
+                        true);
                 userResponsesById.remove(user.getId());
                 iteratorUser.remove(user.getId());
                 questionsForEachUser.remove(user.getId());
-                UserIdAndQuestionnaire.remove(user.getId());
+                creates.remove(user.getId());
             }
         }
     }
