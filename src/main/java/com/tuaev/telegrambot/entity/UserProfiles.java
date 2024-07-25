@@ -11,6 +11,16 @@ public class UserProfiles{
     private String photo;
     private boolean status;
 
+    public void setId(int id) {
+        this.id = id;
+    }
+
+    private int id;
+
+    public int getId() {
+        return id;
+    }
+
     public String getUser_profiles_id() {
         return user_profiles_id;
     }
