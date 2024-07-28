@@ -10,6 +10,16 @@ public class UserProfiles{
     private String user_description;
     private String photo;
     private boolean status;
+    private String last_partner;
+
+
+    public String getLast_partner() {
+        return last_partner;
+    }
+
+    public void setLast_partner(String last_partner) {
+        this.last_partner = last_partner;
+    }
 
     public void setId(int id) {
         this.id = id;

@@ -18,6 +18,7 @@ public class UserProfilesRowMapper implements RowMapper<UserProfiles> {
         userProfiles.setPhoto(rs.getString("photo"));
         userProfiles.setStatus(rs.getBoolean("status"));
         userProfiles.setId(rs.getInt("id"));
+        userProfiles.setLast_partner(rs.getString("last_partner"));
         return userProfiles;
     }
 }

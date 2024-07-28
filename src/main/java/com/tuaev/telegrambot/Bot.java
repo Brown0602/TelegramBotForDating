@@ -33,7 +33,6 @@ public class Bot extends TelegramLongPollingBot {
     String botUsername;
     @Value("${bot.token}")
     String botToken;
-    private final Map<Long, List<Map<String, Object>>> aProfileForTheUser = new HashMap<>();
     private final Map<Long, UserProfiles> profilesByIdUser = new HashMap<>();
     private final Map<String, String> userResponses = new HashMap<>();
     private final Map<Long, Map<String, String>> userResponsesById = new HashMap<>();
@@ -136,27 +135,33 @@ public class Bot extends TelegramLongPollingBot {
         }
 
         if (Boolean.TRUE.equals(jdbcTemplate.queryForObject("SELECT EXISTS(SELECT * FROM user_profiles WHERE user_profiles_id = ?)", Boolean.class, String.valueOf(user.getId())))) {
-            UserProfiles userProfiles1 = jdbcTemplate.queryForObject("SELECT * FROM user_profiles WHERE user_profiles_id = ?", new UserProfilesRowMapper(), String.valueOf(user.getId()));
-            profilesByIdUser.put(user.getId(), userProfiles1);
+            UserProfiles userProfile = jdbcTemplate.queryForObject("SELECT * FROM user_profiles WHERE user_profiles_id = ?", new UserProfilesRowMapper(), String.valueOf(user.getId()));
+            profilesByIdUser.put(user.getId(), userProfile);
+            if (message.getText().equals("Нравится") && Boolean.TRUE.equals(jdbcTemplate.queryForObject("SELECT user_profiles.error_condition FROM user_profiles WHERE user_profiles_id = ?", Boolean.class, String.valueOf(user.getId())))){
+                jdbcTemplate.update("INSERT INTO like_partners(user_id, fk_user_profiles) VALUES(?, ?)",
+                        profilesByIdUser.get(user.getId()).getLast_partner(), profilesByIdUser.get(user.getId()).getId());
+            } else if (message.getText().equals("Не нравится") && Boolean.TRUE.equals(jdbcTemplate.queryForObject("SELECT user_profiles.error_condition FROM user_profiles WHERE user_profiles_id = ?", Boolean.class, String.valueOf(user.getId())))) {
+                jdbcTemplate.update("INSERT INTO dislike_partners(user_id, fk_user_profiles) VALUES(?, ?)",
+                        profilesByIdUser.get(user.getId()).getLast_partner(), profilesByIdUser.get(user.getId()).getId());
+            }
             Optional<List<Map<String, Object>>> userProfiles = Optional.of(
                     jdbcTemplate.queryForList(
-                            "SELECT * FROM user_profiles WHERE NOT user_profiles_sex = ? AND user_profiles_city = ?\n" +
-                                    "AND user_profiles_age BETWEEN ? AND ?",
+                            "SELECT user_profiles.user_profiles_id, user_profiles.user_profiles_name,\n" +
+                                    "user_profiles.user_profiles_age, user_profiles.user_profiles_sex,\n" +
+                                    "user_profiles.user_profiles_city, user_profiles.user_description, user_profiles.photo\n" +
+                                    "FROM user_profiles\n" +
+                                    "LEFT JOIN dislike_partners ON user_profiles.user_profiles_id = dislike_partners.user_id \n" +
+                                    "WHERE dislike_partners.user_id IS NULL\n" +
+                                    "AND user_profiles.user_profiles_sex != ?\n" +
+                                    "AND user_profiles.user_profiles_city = ?\n" +
+                                    "AND user_profiles.user_profiles_age BETWEEN ? AND ?",
                             profilesByIdUser.get(user.getId()).getUser_profiles_sex(),
                             profilesByIdUser.get(user.getId()).getUser_profiles_city(),
                             profilesByIdUser.get(user.getId()).getUser_profiles_age() - 5,
                             profilesByIdUser.get(user.getId()).getUser_profiles_age() + 5
                     )
             );
-            Random random = new Random();
-            int rand = random.nextInt(0, userProfiles.get().size());
-            if (message.getText().equals("Нравится")){
-                jdbcTemplate.update("INSERT INTO like_partners(user_id, fk_user_profiles) VALUES(?, ?)",
-                        aProfileForTheUser.get(user.getId()).get(rand).get("user_profiles_id"), profilesByIdUser.get(user.getId()).getId());
-            } else if (message.getText().equals("Не нравится")) {
-                jdbcTemplate.update("INSERT INTO dislike_partners(user_id, fk_user_profiles) VALUES(?, ?)",
-                        aProfileForTheUser.get(user.getId()).get(rand).get("user_profiles_id"), profilesByIdUser.get(user.getId()).getId());
-            }
+
             if (userProfiles.get().size() == 0 && message.hasText() && message.getText().equals("Смотреть анкеты")) {
                 try {
                     execute(SendMessage.builder()
@@ -172,13 +177,16 @@ public class Bot extends TelegramLongPollingBot {
                 }
             }
             if (userProfiles.get().size() != 0) {
+                Random random = new Random();
+                int rand = random.nextInt(0, userProfiles.get().size());
                 if (Boolean.FALSE.equals(jdbcTemplate.queryForObject("SELECT user_profiles.viewing FROM user_profiles WHERE user_profiles_id = ?", Boolean.class, String.valueOf(user.getId()))) && message.hasText() && message.getText().equals("Смотреть анкеты") && Boolean.TRUE.equals(jdbcTemplate.queryForObject("SELECT user_profiles.status FROM user_profiles WHERE user_profiles_id = ?", Boolean.class, String.valueOf(user.getId())))) {
                     jdbcTemplate.update("UPDATE user_profiles SET viewing = ? WHERE user_profiles_id = ?", true, String.valueOf(user.getId()));
                 }
                 if (Boolean.TRUE.equals(jdbcTemplate.queryForObject("SELECT user_profiles.viewing FROM user_profiles WHERE user_profiles_id = ?", Boolean.class, String.valueOf(user.getId()))) && Boolean.TRUE.equals(jdbcTemplate.queryForObject("SELECT user_profiles.status FROM user_profiles WHERE user_profiles_id = ?", Boolean.class, String.valueOf(user.getId())))
                         && Boolean.FALSE.equals(jdbcTemplate.queryForObject("SELECT user_profiles.error_condition FROM user_profiles WHERE user_profiles_id = ?", Boolean.class, String.valueOf(user.getId())))
                         && message.getText().equals("Смотреть анкеты") || Boolean.TRUE.equals(jdbcTemplate.queryForObject("SELECT user_profiles.viewing FROM user_profiles WHERE user_profiles_id = ?", Boolean.class, String.valueOf(user.getId()))) && Boolean.TRUE.equals(jdbcTemplate.queryForObject("SELECT user_profiles.status FROM user_profiles WHERE user_profiles_id = ?", Boolean.class, String.valueOf(user.getId()))) && message.getText().equals("Не нравится") || Boolean.TRUE.equals(jdbcTemplate.queryForObject("SELECT user_profiles.viewing FROM user_profiles WHERE user_profiles_id = ?", Boolean.class, String.valueOf(user.getId()))) && Boolean.TRUE.equals(jdbcTemplate.queryForObject("SELECT user_profiles.status FROM user_profiles WHERE user_profiles_id = ?", Boolean.class, String.valueOf(user.getId()))) && message.getText().equals("Нравится")) {
-                    aProfileForTheUser.put(user.getId(), userProfiles.get());
+                    jdbcTemplate.update("UPDATE user_profiles SET last_partner = ? WHERE user_profiles_id = ?",
+                            userProfiles.get().get(rand).get("user_profiles_id"), profilesByIdUser.get(user.getId()).getUser_profiles_id());
                     try {
                         execute(SendMessage.builder()
                                 .chatId(String.valueOf(user.getId()))
@@ -190,13 +198,12 @@ public class Bot extends TelegramLongPollingBot {
                                 .build());
                         execute(SendPhoto.builder()
                                 .chatId(String.valueOf(user.getId()))
-                                .photo(new InputFile(new File(aProfileForTheUser.get(user.getId()).get(rand).get("photo").toString())))
-                                .caption(aProfileForTheUser.get(user.getId()).get(rand).get("user_profiles_name").toString() + "," + " " +
-                                        aProfileForTheUser.get(user.getId()).get(rand).get("user_profiles_age").toString() + "," + " " +
-                                        aProfileForTheUser.get(user.getId()).get(rand).get("user_profiles_city").toString() + "," + " " +
-                                        aProfileForTheUser.get(user.getId()).get(rand).get("user_description").toString())
+                                .photo(new InputFile(new File(userProfiles.get().get(rand).get("photo").toString())))
+                                .caption(userProfiles.get().get(rand).get("user_profiles_name").toString() + "," + " " +
+                                        userProfiles.get().get(rand).get("user_profiles_age").toString() + "," + " " +
+                                        userProfiles.get().get(rand).get("user_profiles_city").toString() + "," + " " +
+                                        userProfiles.get().get(rand).get("user_description").toString())
                                 .build());
-                        aProfileForTheUser.remove(user.getId());
                     } catch (TelegramApiException ignored) {
                     }
                 }
