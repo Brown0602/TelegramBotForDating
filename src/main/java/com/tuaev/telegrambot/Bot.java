@@ -151,7 +151,9 @@ public class Bot extends TelegramLongPollingBot {
                                     "user_profiles.user_profiles_city, user_profiles.user_description, user_profiles.photo\n" +
                                     "FROM user_profiles\n" +
                                     "LEFT JOIN dislike_partners ON user_profiles.user_profiles_id = dislike_partners.user_id \n" +
+                                    "LEFT JOIN like_partners ON user_profiles.user_profiles_id = like_partners.user_id \n" +
                                     "WHERE dislike_partners.user_id IS NULL\n" +
+                                    "AND like_partners.user_id IS NULL\n" +
                                     "AND user_profiles.user_profiles_sex != ?\n" +
                                     "AND user_profiles.user_profiles_city = ?\n" +
                                     "AND user_profiles.user_profiles_age BETWEEN ? AND ?",
@@ -162,18 +164,20 @@ public class Bot extends TelegramLongPollingBot {
                     )
             );
 
-            if (userProfiles.get().size() == 0 && message.hasText() && message.getText().equals("Смотреть анкеты")) {
-                try {
-                    execute(SendMessage.builder()
-                            .chatId(String.valueOf(user.getId()))
-                            .text("К сожалению подходящих анкет для вас ещё нет")
-                            .replyMarkup(ReplyKeyboardMarkup.builder()
-                                    .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("Смотреть анкеты"), new KeyboardButton("Заполнить анкету заново"),
-                                            new KeyboardButton("Сделать анкету неактивной"), new KeyboardButton("Сделать анкету активной"))))
-                                    .resizeKeyboard(true)
-                                    .build())
-                            .build());
-                } catch (TelegramApiException ignored) {
+            if (userProfiles.get().size() == 0 && message.hasText()) {
+                if (message.getText().equals("Смотреть анкеты") || message.getText().equals("Нравится") || message.getText().equals("Не нравится")) {
+                    try {
+                        execute(SendMessage.builder()
+                                .chatId(String.valueOf(user.getId()))
+                                .text("К сожалению подходящих анкет для вас ещё нет")
+                                .replyMarkup(ReplyKeyboardMarkup.builder()
+                                        .keyboardRow(new KeyboardRow(List.of(new KeyboardButton("Смотреть анкеты"), new KeyboardButton("Заполнить анкету заново"),
+                                                new KeyboardButton("Сделать анкету неактивной"), new KeyboardButton("Сделать анкету активной"))))
+                                        .resizeKeyboard(true)
+                                        .build())
+                                .build());
+                    } catch (TelegramApiException ignored) {
+                    }
                 }
             }
             if (userProfiles.get().size() != 0) {
