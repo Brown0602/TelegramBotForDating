@@ -2,11 +2,11 @@ package com.tuaev.telegrambot;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tuaev.telegrambot.entity.UserProfiles;
+import org.hibernate.Session;
+import org.hibernate.SessionFactory;
+import org.hibernate.Transaction;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.PropertySource;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
@@ -23,14 +23,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.*;
-
-@Component
-@PropertySource("application.properties")
 public class Bot extends TelegramLongPollingBot {
 
-    @Value("${bot.username}")
     String botUsername;
-    @Value("${bot.token}")
     String botToken;
     private final Map<Long, UserProfiles> profilesByIdUser = new HashMap<>();
     private final Map<String, String> userResponses = new HashMap<>();
@@ -40,14 +35,26 @@ public class Bot extends TelegramLongPollingBot {
     private final Map<Long, List<String>> questionsForEachUser = new HashMap<>();
     private final Map<Long, Boolean> creates = new HashMap<>();
     private final Map<Long, String> photos = new HashMap<>();
-    JdbcTemplate jdbcTemplate;
-
     @Autowired
-    public Bot(JdbcTemplate jdbcTemplate) {
+    private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private SessionFactory sessionFactory;
+    private Session session;
+    private Transaction transaction;
+
+    public void setBotUsername(String botUsername) {
+        this.botUsername = botUsername;
+    }
+
+    public void setBotToken(String botToken) {
+        this.botToken = botToken;
+    }
+
+    public Bot(JdbcTemplate jdbcTemplate){
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public Bot() {
+    public Bot (){
 
     }
 
@@ -515,17 +522,56 @@ public class Bot extends TelegramLongPollingBot {
                 } catch (TelegramApiException e) {
                     throw new RuntimeException(e);
                 }
-                jdbcTemplate.update("INSERT INTO user_profiles(user_profiles_id, user_profiles_name, user_profiles_age, user_profiles_sex, user_profiles_city, user_description, photo, status, viewing, error_condition) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        user.getId(),
-                        userResponsesById.get(user.getId()).get("Имя"),
-                        Integer.parseInt(userResponsesById.get(user.getId()).get("Возраст")),
-                        userResponsesById.get(user.getId()).get("Пол"),
-                        userResponsesById.get(user.getId()).get("Город"),
-                        userResponsesById.get(user.getId()).get("Описание"),
-                        userResponsesById.get(user.getId()).get("Фото"),
-                        true,
-                        false,
-                        false);
+
+                session = sessionFactory.openSession();
+                transaction = session.beginTransaction();
+                session.createNativeQuery("INSERT INTO user_profiles" +
+                        "(user_profiles_id," +
+                        "user_profiles_name," +
+                        "user_profiles_age," +
+                        "user_profiles_sex," +
+                        "user_profiles_city," +
+                        "user_description," +
+                        "photo," +
+                        "status," +
+                        "viewing," +
+                        "error_condition)" +
+                        "VALUES" +
+                        "(:id," +
+                        ":name," +
+                        ":age," +
+                        ":sex," +
+                        ":city," +
+                        ":description," +
+                        ":photo," +
+                        ":status," +
+                        ":viewing," +
+                        ":error_condition)", UserProfiles.class)
+                        .setParameter("id", user.getId())
+                        .setParameter("name", userResponsesById.get(user.getId()).get("Имя"))
+                        .setParameter("age", Integer.parseInt(userResponsesById.get(user.getId()).get("Возраст")))
+                        .setParameter("sex", userResponsesById.get(user.getId()).get("Пол"))
+                        .setParameter("city", userResponsesById.get(user.getId()).get("Город"))
+                        .setParameter("description", userResponsesById.get(user.getId()).get("Описание"))
+                        .setParameter("photo", userResponsesById.get(user.getId()).get("Фото"))
+                        .setParameter("status", true)
+                        .setParameter("viewing", false)
+                        .setParameter("error_condition", false)
+                        .executeUpdate();
+                transaction.commit();
+                session.close();
+
+//                jdbcTemplate.update("INSERT INTO user_profiles(user_profiles_id, user_profiles_name, user_profiles_age, user_profiles_sex, user_profiles_city, user_description, photo, status, viewing, error_condition) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+//                        user.getId(),
+//                        userResponsesById.get(user.getId()).get("Имя"),
+//                        Integer.parseInt(userResponsesById.get(user.getId()).get("Возраст")),
+//                        userResponsesById.get(user.getId()).get("Пол"),
+//                        userResponsesById.get(user.getId()).get("Город"),
+//                        userResponsesById.get(user.getId()).get("Описание"),
+//                        userResponsesById.get(user.getId()).get("Фото"),
+//                        true,
+//                        false,
+//                        false);
                 userResponsesById.remove(user.getId());
                 iteratorUser.remove(user.getId());
                 questionsForEachUser.remove(user.getId());
